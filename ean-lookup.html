@@ -1,0 +1,1164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>EAN / Article Lookup</title>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --card: #1a2332;
+      --border: #2d3a4f;
+      --text: #e7ecf3;
+      --muted: #8b9bb4;
+      --accent: #3b82f6;
+      --accent-hover: #2563eb;
+      --success: #22c55e;
+      --danger: #ef4444;
+      --warning: #f59e0b;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      line-height: 1.5;
+      padding: 16px;
+    }
+
+    .container { max-width: 720px; margin: 0 auto; }
+
+    header {
+      text-align: center;
+      margin-bottom: 28px;
+      padding-top: 8px;
+    }
+
+    header h1 {
+      font-size: 1.6rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    header p {
+      color: var(--muted);
+      font-size: 0.95rem;
+      margin-top: 6px;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+
+    .card h2 {
+      font-size: 1.05rem;
+      font-weight: 600;
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .card h2 .step {
+      background: var(--accent);
+      color: #fff;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      font-size: 0.75rem;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .upload-zone {
+      border: 2px dashed var(--border);
+      border-radius: 10px;
+      padding: 28px 16px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      position: relative;
+    }
+
+    .upload-zone:hover,
+    .upload-zone.dragover {
+      border-color: var(--accent);
+      background: rgba(59, 130, 246, 0.08);
+    }
+
+    .upload-zone input[type="file"] {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+      width: 100%;
+      height: 100%;
+    }
+
+    .upload-zone .icon { font-size: 2rem; margin-bottom: 8px; }
+
+    .upload-zone .hint {
+      color: var(--muted);
+      font-size: 0.875rem;
+      margin-top: 4px;
+    }
+
+    .file-info {
+      margin-top: 12px;
+      padding: 10px 14px;
+      background: rgba(34, 197, 94, 0.12);
+      border: 1px solid rgba(34, 197, 94, 0.35);
+      border-radius: 8px;
+      font-size: 0.9rem;
+      display: none;
+    }
+
+    .file-info.visible { display: block; }
+    .file-info strong { color: var(--success); }
+
+    .mapping {
+      display: none;
+      margin-top: 16px;
+    }
+
+    .mapping.visible { display: block; }
+
+    .mapping label {
+      display: block;
+      font-size: 0.85rem;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+
+    .mapping select {
+      width: 100%;
+      padding: 10px 12px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 0.95rem;
+      margin-bottom: 14px;
+    }
+
+    .mapping select:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+
+    .search-tabs {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 14px;
+      background: var(--bg);
+      padding: 4px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+    }
+
+    .search-tab {
+      flex: 1;
+      padding: 10px 12px;
+      border: none;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--muted);
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+    }
+
+    .search-tab.active {
+      background: var(--accent);
+      color: #fff;
+    }
+
+    .search-panel { display: none; }
+    .search-panel.active { display: block; }
+
+    .manual-row {
+      display: flex;
+      gap: 10px;
+    }
+
+    .manual-row input {
+      flex: 1;
+      padding: 12px 14px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 1rem;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .manual-row input:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+
+    .manual-row input::placeholder { color: var(--muted); }
+
+    button, .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 12px 18px;
+      border: none;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s, transform 0.1s;
+    }
+
+    button:active { transform: scale(0.98); }
+
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover { background: var(--accent-hover); }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .btn-secondary {
+      background: transparent;
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    .btn-secondary:hover { background: rgba(255, 255, 255, 0.05); }
+
+    .btn-danger {
+      background: rgba(239, 68, 68, 0.15);
+      color: var(--danger);
+      border: 1px solid rgba(239, 68, 68, 0.35);
+    }
+    .btn-danger:hover { background: rgba(239, 68, 68, 0.25); }
+
+    .btn-block { width: 100%; }
+
+    #reader {
+      width: 100%;
+      max-width: 100%;
+      border-radius: 10px;
+      overflow: hidden;
+      display: none;
+      margin-top: 12px;
+    }
+    #reader.visible { display: block; }
+    #reader video { border-radius: 10px; }
+
+    .scanner-controls {
+      display: flex;
+      gap: 10px;
+      margin-top: 12px;
+      flex-wrap: wrap;
+    }
+
+    .scanner-status {
+      font-size: 0.85rem;
+      color: var(--muted);
+      margin-top: 8px;
+      text-align: center;
+    }
+
+    .result-card { display: none; }
+    .result-card.visible { display: block; }
+
+    .result-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .result-header .query-badge {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      background: rgba(59, 130, 246, 0.15);
+      color: var(--accent);
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 0.9rem;
+      font-weight: 600;
+    }
+
+    .result-header .query-type {
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-right: 6px;
+      font-weight: 500;
+      font-family: inherit;
+    }
+
+    .result-status {
+      font-size: 0.8rem;
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 4px;
+    }
+    .result-status.found {
+      background: rgba(34, 197, 94, 0.15);
+      color: var(--success);
+    }
+    .result-status.not-found {
+      background: rgba(239, 68, 68, 0.15);
+      color: var(--danger);
+    }
+
+    .details-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .details-table th,
+    .details-table td {
+      text-align: left;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.9rem;
+      vertical-align: top;
+    }
+
+    .details-table th {
+      color: var(--muted);
+      font-weight: 500;
+      width: 40%;
+      white-space: nowrap;
+    }
+
+    .details-table tr:last-child th,
+    .details-table tr:last-child td { border-bottom: none; }
+
+    .details-table td { word-break: break-word; }
+
+    .empty-msg {
+      text-align: center;
+      color: var(--muted);
+      padding: 20px;
+      font-size: 0.95rem;
+    }
+
+    .history-list {
+      list-style: none;
+      max-height: 220px;
+      overflow-y: auto;
+    }
+
+    .history-list li {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.9rem;
+      cursor: pointer;
+    }
+
+    .history-list li:last-child { border-bottom: none; }
+    .history-list li:hover { color: var(--accent); }
+
+    .history-list .time {
+      color: var(--muted);
+      font-size: 0.8rem;
+    }
+
+    .history-list .found-dot,
+    .history-list .not-found-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      display: inline-block;
+      margin-right: 8px;
+    }
+    .history-list .found-dot { background: var(--success); }
+    .history-list .not-found-dot { background: var(--danger); }
+
+    .history-list .type-tag {
+      font-size: 0.7rem;
+      color: var(--muted);
+      margin-left: 6px;
+      text-transform: uppercase;
+    }
+
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(100px);
+      background: var(--card);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 12px 20px;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+      opacity: 0;
+      transition: transform 0.3s, opacity 0.3s;
+      z-index: 1000;
+      max-width: 90%;
+      text-align: center;
+    }
+
+    .toast.show {
+      transform: translateX(-50%) translateY(0);
+      opacity: 1;
+    }
+    .toast.success { border-color: rgba(34, 197, 94, 0.5); }
+    .toast.error { border-color: rgba(239, 68, 68, 0.5); }
+
+    footer {
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.8rem;
+      margin-top: 24px;
+      padding-bottom: 16px;
+    }
+
+    @media (max-width: 480px) {
+      body { padding: 12px; }
+      header h1 { font-size: 1.35rem; }
+      .card { padding: 16px; }
+      .manual-row { flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>EAN / Article Lookup</h1>
+      <p>Upload Excel, then search by EAN barcode or article number</p>
+    </header>
+
+    <!-- Step 1: Upload -->
+    <div class="card">
+      <h2><span class="step">1</span> Upload Excel File</h2>
+      <div class="upload-zone" id="uploadZone">
+        <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" />
+        <div class="icon">📄</div>
+        <div>Click or drag &amp; drop Excel / CSV file</div>
+        <div class="hint">.xlsx, .xls or .csv — first row should be headers</div>
+      </div>
+      <div class="file-info" id="fileInfo"></div>
+      <div id="resetFileWrap" style="display: none; margin-top: 10px;">
+        <button type="button" class="btn-danger btn-block" id="resetFileBtn">Clear uploaded file &amp; reset</button>
+      </div>
+
+      <div class="mapping" id="mappingSection">
+        <label for="eanColumn">EAN / barcode column</label>
+        <select id="eanColumn"></select>
+
+        <label for="articleColumn">Article number column <span style="opacity:0.7">(optional)</span></label>
+        <select id="articleColumn">
+          <option value="">— None —</option>
+        </select>
+
+        <button type="button" class="btn-primary btn-block" id="confirmMappingBtn">Confirm columns</button>
+      </div>
+    </div>
+
+    <!-- Step 2: Search -->
+    <div class="card">
+      <h2><span class="step">2</span> Search</h2>
+
+      <div class="search-tabs">
+        <button type="button" class="search-tab active" data-tab="ean">EAN / Barcode</button>
+        <button type="button" class="search-tab" data-tab="article">Article number</button>
+      </div>
+
+      <!-- EAN panel -->
+      <div class="search-panel active" id="panelEan">
+        <div class="manual-row">
+          <input type="text" id="manualEan" placeholder="Enter EAN (e.g. 5901234123457)" inputmode="numeric" autocomplete="off" />
+          <button type="button" class="btn-primary" id="lookupEanBtn">Lookup</button>
+          <button type="button" class="btn-secondary" id="clearEanBtn" title="Clear input">Clear</button>
+        </div>
+        <div style="margin-top: 14px;">
+          <button type="button" class="btn-secondary btn-block" id="startScannerBtn">📷 Start Camera Scanner</button>
+        </div>
+        <div id="reader"></div>
+        <div class="scanner-controls" id="scannerControls" style="display: none;">
+          <button type="button" class="btn-danger" id="stopScannerBtn">Stop Scanner</button>
+        </div>
+        <div class="scanner-status" id="scannerStatus"></div>
+      </div>
+
+      <!-- Article panel -->
+      <div class="search-panel" id="panelArticle">
+        <div class="manual-row">
+          <input type="text" id="manualArticle" placeholder="Enter article number" autocomplete="off" />
+          <button type="button" class="btn-primary" id="lookupArticleBtn">Lookup</button>
+          <button type="button" class="btn-secondary" id="clearArticleBtn" title="Clear input">Clear</button>
+        </div>
+        <p style="margin-top: 10px; font-size: 0.85rem; color: var(--muted);" id="articleHint">
+          Select an article number column in step 1 to enable this search.
+        </p>
+      </div>
+    </div>
+
+    <!-- Results -->
+    <div class="card result-card" id="resultCard">
+      <div class="result-header">
+        <span>
+          <span class="query-type" id="resultQueryType"></span>
+          <span class="query-badge" id="resultQuery"></span>
+        </span>
+        <span style="display: flex; align-items: center; gap: 8px;">
+          <span class="result-status" id="resultStatus"></span>
+          <button type="button" class="btn-secondary" id="clearResultBtn" style="padding: 6px 12px; font-size: 0.8rem;">Clear</button>
+        </span>
+      </div>
+      <div id="resultBody"></div>
+
+      <!-- Remark -->
+      <div id="remarkSection" style="margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border);">
+        <label for="remarkInput" style="display: block; font-size: 0.85rem; color: var(--muted); margin-bottom: 6px;">Remark (saved with this search)</label>
+        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+          <input type="text" id="remarkInput" placeholder="Add a note or remark…" autocomplete="off"
+            style="flex: 1; min-width: 160px; padding: 12px 14px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 0.95rem;" />
+          <button type="button" class="btn-primary" id="saveRemarkBtn">Save remark</button>
+        </div>
+        <p id="remarkSavedMsg" style="display: none; margin-top: 8px; font-size: 0.85rem; color: var(--success);"></p>
+      </div>
+    </div>
+
+    <!-- History / Export -->
+    <div class="card" id="historyCard" style="display: none;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 10px;">
+        <h2 style="margin-bottom: 0;">Search log</h2>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+          <button type="button" class="btn-primary" id="downloadExcelBtn" style="padding: 8px 14px; font-size: 0.85rem;">⬇ Download Excel</button>
+          <button type="button" class="btn-secondary" id="clearHistoryBtn" style="padding: 8px 14px; font-size: 0.85rem;">Clear log</button>
+        </div>
+      </div>
+      <ul class="history-list" id="historyList"></ul>
+    </div>
+
+    <footer>
+      Data stays in your browser — nothing is uploaded to any server.
+    </footer>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    (function () {
+      let rows = [];
+      let headers = [];
+      let eanKey = null;
+      let articleKey = null;
+      let dataReady = false;
+      let html5QrCode = null;
+      let scanning = false;
+      let lastScanned = "";
+      let lastScanTime = 0;
+      let lastHistoryIndex = -1; // index in history of the latest lookup (for attaching remark)
+      const history = []; // { type, query, found, time, remark, rowSnapshot }
+
+      const fileInput = document.getElementById("fileInput");
+      const uploadZone = document.getElementById("uploadZone");
+      const fileInfo = document.getElementById("fileInfo");
+      const mappingSection = document.getElementById("mappingSection");
+      const eanColumnSelect = document.getElementById("eanColumn");
+      const articleColumnSelect = document.getElementById("articleColumn");
+      const confirmMappingBtn = document.getElementById("confirmMappingBtn");
+      const manualEan = document.getElementById("manualEan");
+      const manualArticle = document.getElementById("manualArticle");
+      const lookupEanBtn = document.getElementById("lookupEanBtn");
+      const lookupArticleBtn = document.getElementById("lookupArticleBtn");
+      const clearEanBtn = document.getElementById("clearEanBtn");
+      const clearArticleBtn = document.getElementById("clearArticleBtn");
+      const clearResultBtn = document.getElementById("clearResultBtn");
+      const clearHistoryBtn = document.getElementById("clearHistoryBtn");
+      const resetFileBtn = document.getElementById("resetFileBtn");
+      const resetFileWrap = document.getElementById("resetFileWrap");
+      const remarkInput = document.getElementById("remarkInput");
+      const saveRemarkBtn = document.getElementById("saveRemarkBtn");
+      const remarkSavedMsg = document.getElementById("remarkSavedMsg");
+      const downloadExcelBtn = document.getElementById("downloadExcelBtn");
+      const startScannerBtn = document.getElementById("startScannerBtn");
+      const stopScannerBtn = document.getElementById("stopScannerBtn");
+      const scannerControls = document.getElementById("scannerControls");
+      const scannerStatus = document.getElementById("scannerStatus");
+      const readerEl = document.getElementById("reader");
+      const resultCard = document.getElementById("resultCard");
+      const resultQueryType = document.getElementById("resultQueryType");
+      const resultQuery = document.getElementById("resultQuery");
+      const resultStatus = document.getElementById("resultStatus");
+      const resultBody = document.getElementById("resultBody");
+      const historyCard = document.getElementById("historyCard");
+      const historyList = document.getElementById("historyList");
+      const toastEl = document.getElementById("toast");
+      const articleHint = document.getElementById("articleHint");
+
+      function showToast(msg, type) {
+        toastEl.textContent = msg;
+        toastEl.className = "toast show " + (type || "");
+        setTimeout(function () { toastEl.classList.remove("show"); }, 2800);
+      }
+
+      function escapeHtml(str) {
+        const d = document.createElement("div");
+        d.textContent = str == null ? "" : String(str);
+        return d.innerHTML;
+      }
+
+      function normalizeEan(val) {
+        if (val == null) return "";
+        return String(val).trim().replace(/[^\d]/g, "");
+      }
+
+      function normalizeArticle(val) {
+        if (val == null) return "";
+        return String(val).trim().toLowerCase();
+      }
+
+      function findBestColumn(cols, patterns) {
+        for (const p of patterns) {
+          const match = cols.find(function (c) { return p.test(c); });
+          if (match) return match;
+        }
+        return null;
+      }
+
+      // Tabs
+      document.querySelectorAll(".search-tab").forEach(function (tab) {
+        tab.addEventListener("click", function () {
+          document.querySelectorAll(".search-tab").forEach(function (t) { t.classList.remove("active"); });
+          document.querySelectorAll(".search-panel").forEach(function (p) { p.classList.remove("active"); });
+          tab.classList.add("active");
+          const panel = document.getElementById(tab.dataset.tab === "ean" ? "panelEan" : "panelArticle");
+          panel.classList.add("active");
+          if (tab.dataset.tab === "article" && scanning) stopScanner();
+        });
+      });
+
+      // Excel parse
+      function parseFile(file) {
+        const reader = new FileReader();
+        reader.onload = function (e) {
+          try {
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, { type: "array", cellDates: true });
+            const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+            const json = XLSX.utils.sheet_to_json(firstSheet, { defval: "", raw: false });
+
+            if (!json.length) {
+              showToast("Sheet is empty", "error");
+              return;
+            }
+
+            rows = json;
+            headers = Object.keys(json[0]);
+            dataReady = false;
+            eanKey = null;
+            articleKey = null;
+
+            fileInfo.innerHTML =
+              "<strong>✓ Loaded:</strong> " + escapeHtml(file.name) +
+              " — " + rows.length + " row(s), " + headers.length + " column(s)";
+            fileInfo.classList.add("visible");
+            resetFileWrap.style.display = "block";
+
+            eanColumnSelect.innerHTML = "";
+            articleColumnSelect.innerHTML = '<option value="">— None —</option>';
+            headers.forEach(function (h) {
+              const opt1 = document.createElement("option");
+              opt1.value = h;
+              opt1.textContent = h;
+              eanColumnSelect.appendChild(opt1);
+
+              const opt2 = document.createElement("option");
+              opt2.value = h;
+              opt2.textContent = h;
+              articleColumnSelect.appendChild(opt2);
+            });
+
+            const suggestedEan = findBestColumn(headers, [/ean/i, /barcode/i, /gtin/i, /upc/i]);
+            if (suggestedEan) eanColumnSelect.value = suggestedEan;
+            else if (headers[0]) eanColumnSelect.value = headers[0];
+
+            const suggestedArt = findBestColumn(headers, [/article/i, /artikel/i, /item\s*no/i, /item\s*#/i, /art\.?\s*no/i, /sku/i, /product\s*code/i, /part\s*no/i]);
+            if (suggestedArt && suggestedArt !== eanColumnSelect.value) {
+              articleColumnSelect.value = suggestedArt;
+            }
+
+            mappingSection.classList.add("visible");
+            showToast("File loaded — select columns", "success");
+          } catch (err) {
+            console.error(err);
+            showToast("Failed to read file: " + err.message, "error");
+          }
+        };
+        reader.onerror = function () { showToast("Could not read the file", "error"); };
+        reader.readAsArrayBuffer(file);
+      }
+
+      confirmMappingBtn.addEventListener("click", function () {
+        eanKey = eanColumnSelect.value || null;
+        articleKey = articleColumnSelect.value || null;
+
+        if (!eanKey && !articleKey) {
+          showToast("Select at least one column (EAN or Article)", "error");
+          return;
+        }
+
+        dataReady = true;
+        mappingSection.classList.remove("visible");
+
+        let info = fileInfo.innerHTML;
+        if (eanKey) info += "<br><strong>EAN column:</strong> " + escapeHtml(eanKey);
+        if (articleKey) info += "<br><strong>Article column:</strong> " + escapeHtml(articleKey);
+        fileInfo.innerHTML = info;
+
+        if (articleKey) {
+          articleHint.textContent = "Searching in column: " + articleKey;
+        } else {
+          articleHint.textContent = "No article column selected. Go back to step 1 if needed.";
+        }
+
+        showToast("Ready to search", "success");
+      });
+
+      fileInput.addEventListener("change", function () {
+        if (fileInput.files && fileInput.files[0]) parseFile(fileInput.files[0]);
+      });
+
+      uploadZone.addEventListener("dragover", function (e) {
+        e.preventDefault();
+        uploadZone.classList.add("dragover");
+      });
+      uploadZone.addEventListener("dragleave", function () {
+        uploadZone.classList.remove("dragover");
+      });
+      uploadZone.addEventListener("drop", function (e) {
+        e.preventDefault();
+        uploadZone.classList.remove("dragover");
+        if (e.dataTransfer.files && e.dataTransfer.files[0]) parseFile(e.dataTransfer.files[0]);
+      });
+
+      // Lookup by EAN
+      function lookupByEan(eanRaw) {
+        const ean = normalizeEan(eanRaw);
+        if (!ean) {
+          showToast("Enter a valid EAN number", "error");
+          return;
+        }
+        if (!dataReady) {
+          showToast("Upload Excel and confirm columns first", "error");
+          return;
+        }
+        if (!eanKey) {
+          showToast("No EAN column selected", "error");
+          return;
+        }
+
+        let match = null;
+        for (let i = 0; i < rows.length; i++) {
+          const cell = normalizeEan(rows[i][eanKey]);
+          if (!cell) continue;
+          if (cell === ean || cell === ean.replace(/^0+/, "") || ean === cell.replace(/^0+/, "")) {
+            if (cell === ean) { match = rows[i]; break; }
+            if (!match) match = rows[i];
+          }
+        }
+
+        if (!match) {
+          const padded = [ean.padStart(8, "0"), ean.padStart(12, "0"), ean.padStart(13, "0"), ean.padStart(14, "0")];
+          for (let i = 0; i < rows.length; i++) {
+            const cell = normalizeEan(rows[i][eanKey]);
+            if (padded.indexOf(cell) !== -1 || padded.indexOf(cell.padStart(13, "0")) !== -1) {
+              match = rows[i];
+              break;
+            }
+          }
+        }
+
+        displayResult("EAN", ean, match);
+        addToHistory("ean", ean, !!match, match);
+      }
+
+      // Lookup by article number
+      function lookupByArticle(artRaw) {
+        const art = normalizeArticle(artRaw);
+        if (!art) {
+          showToast("Enter an article number", "error");
+          return;
+        }
+        if (!dataReady) {
+          showToast("Upload Excel and confirm columns first", "error");
+          return;
+        }
+        if (!articleKey) {
+          showToast("No article number column selected. Confirm columns in step 1.", "error");
+          return;
+        }
+
+        let match = null;
+        // Exact match (case-insensitive), then partial contains
+        for (let i = 0; i < rows.length; i++) {
+          const cell = normalizeArticle(rows[i][articleKey]);
+          if (cell === art) { match = rows[i]; break; }
+        }
+        if (!match) {
+          for (let i = 0; i < rows.length; i++) {
+            const cell = normalizeArticle(rows[i][articleKey]);
+            if (cell && cell.indexOf(art) !== -1) { match = rows[i]; break; }
+          }
+        }
+
+        displayResult("Article", String(artRaw).trim(), match);
+        addToHistory("article", String(artRaw).trim(), !!match, match);
+      }
+
+      function displayResult(type, query, row) {
+        resultCard.classList.add("visible");
+        resultQueryType.textContent = type + ":";
+        resultQuery.textContent = query;
+
+        remarkInput.value = "";
+        remarkSavedMsg.style.display = "none";
+        remarkSavedMsg.textContent = "";
+
+        if (row) {
+          resultStatus.textContent = "Found";
+          resultStatus.className = "result-status found";
+          let html = '<table class="details-table"><tbody>';
+          headers.forEach(function (h) {
+            const val = row[h];
+            const display = val === null || val === undefined || val === "" ? "—" : String(val);
+            html += "<tr><th>" + escapeHtml(h) + "</th><td>" + escapeHtml(display) + "</td></tr>";
+          });
+          html += "</tbody></table>";
+          resultBody.innerHTML = html;
+        } else {
+          resultStatus.textContent = "Not found";
+          resultStatus.className = "result-status not-found";
+          resultBody.innerHTML =
+            '<div class="empty-msg">No matching row for this ' +
+            (type === "EAN" ? "EAN" : "article number") +
+            " in the uploaded file.</div>";
+        }
+
+        resultCard.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }
+
+      function addToHistory(type, query, found, row) {
+        const snapshot = row ? Object.assign({}, row) : null;
+        history.unshift({
+          type: type,
+          query: query,
+          found: found,
+          time: new Date(),
+          remark: "",
+          rowSnapshot: snapshot,
+        });
+        if (history.length > 100) history.pop();
+        lastHistoryIndex = 0;
+        renderHistory();
+      }
+
+      function renderHistory() {
+        if (!history.length) {
+          historyCard.style.display = "none";
+          lastHistoryIndex = -1;
+          return;
+        }
+        historyCard.style.display = "block";
+        historyList.innerHTML = "";
+        history.forEach(function (item, idx) {
+          const li = document.createElement("li");
+          li.style.gap = "10px";
+          const timeStr = item.time.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+          const remarkPreview = item.remark
+            ? '<div style="font-size: 0.8rem; color: var(--muted); margin-top: 2px;">💬 ' + escapeHtml(item.remark) + "</div>"
+            : "";
+          li.innerHTML =
+            '<span class="history-main" style="flex:1; min-width:0; cursor:pointer;"><span class="' + (item.found ? "found-dot" : "not-found-dot") + '"></span>' +
+            escapeHtml(item.query) +
+            '<span class="type-tag">' + (item.type === "ean" ? "EAN" : "Art") + "</span>" +
+            remarkPreview +
+            '</span>' +
+            '<span class="time" style="flex-shrink:0;">' + timeStr + '</span>' +
+            '<button type="button" class="btn-danger history-delete-btn" title="Remove from log" ' +
+            'style="padding: 4px 10px; font-size: 0.75rem; flex-shrink:0;">✕</button>';
+
+          li.querySelector(".history-main").addEventListener("click", function () {
+            lastHistoryIndex = idx;
+            if (item.type === "ean") {
+              document.querySelector('.search-tab[data-tab="ean"]').click();
+              manualEan.value = item.query;
+            } else {
+              document.querySelector('.search-tab[data-tab="article"]').click();
+              manualArticle.value = item.query;
+            }
+            displayResult(
+              item.type === "ean" ? "EAN" : "Article",
+              item.query,
+              item.rowSnapshot
+            );
+            lastHistoryIndex = idx;
+            remarkInput.value = item.remark || "";
+            if (item.remark) {
+              remarkSavedMsg.textContent = "✓ Remark saved with this search";
+              remarkSavedMsg.style.display = "block";
+            } else {
+              remarkSavedMsg.style.display = "none";
+            }
+          });
+
+          li.querySelector(".history-delete-btn").addEventListener("click", function (e) {
+            e.stopPropagation();
+            history.splice(idx, 1);
+            if (lastHistoryIndex === idx) {
+              lastHistoryIndex = -1;
+              remarkInput.value = "";
+              remarkSavedMsg.style.display = "none";
+            } else if (lastHistoryIndex > idx) {
+              lastHistoryIndex -= 1;
+            }
+            renderHistory();
+            showToast("Removed from search log", "success");
+          });
+
+          historyList.appendChild(li);
+        });
+      }
+
+      lookupEanBtn.addEventListener("click", function () { lookupByEan(manualEan.value); });
+      lookupArticleBtn.addEventListener("click", function () { lookupByArticle(manualArticle.value); });
+
+      clearEanBtn.addEventListener("click", function () {
+        manualEan.value = "";
+        manualEan.focus();
+      });
+      clearArticleBtn.addEventListener("click", function () {
+        manualArticle.value = "";
+        manualArticle.focus();
+      });
+      clearResultBtn.addEventListener("click", function () {
+        resultCard.classList.remove("visible");
+        resultBody.innerHTML = "";
+        resultQuery.textContent = "";
+        resultQueryType.textContent = "";
+        resultStatus.textContent = "";
+        resultStatus.className = "result-status";
+        remarkInput.value = "";
+        remarkSavedMsg.style.display = "none";
+      });
+      clearHistoryBtn.addEventListener("click", function () {
+        history.length = 0;
+        lastHistoryIndex = -1;
+        historyList.innerHTML = "";
+        historyCard.style.display = "none";
+        showToast("Search log cleared", "success");
+      });
+
+      saveRemarkBtn.addEventListener("click", function () {
+        const text = remarkInput.value.trim();
+        if (lastHistoryIndex < 0 || lastHistoryIndex >= history.length) {
+          showToast("Search something first, then add a remark", "error");
+          return;
+        }
+        history[lastHistoryIndex].remark = text;
+        renderHistory();
+        if (text) {
+          remarkSavedMsg.textContent = "✓ Remark saved with this search";
+          remarkSavedMsg.style.display = "block";
+          showToast("Remark saved", "success");
+        } else {
+          remarkSavedMsg.style.display = "none";
+          showToast("Remark cleared", "success");
+        }
+      });
+
+      remarkInput.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          saveRemarkBtn.click();
+        }
+      });
+
+      downloadExcelBtn.addEventListener("click", function () {
+        if (!history.length) {
+          showToast("No searches to download", "error");
+          return;
+        }
+        // Build export rows: search info + remark + matched product fields
+        const exportRows = history.map(function (item) {
+          const base = {
+            "Search type": item.type === "ean" ? "EAN" : "Article",
+            "Searched value": item.query,
+            "Found": item.found ? "Yes" : "No",
+            "Remark": item.remark || "",
+            "Date/Time": item.time.toLocaleString(),
+          };
+          if (item.rowSnapshot) {
+            headers.forEach(function (h) {
+              // Avoid overwriting base columns
+              const key = base.hasOwnProperty(h) ? "Product: " + h : h;
+              base[key] = item.rowSnapshot[h] != null ? item.rowSnapshot[h] : "";
+            });
+          }
+          return base;
+        });
+
+        const ws = XLSX.utils.json_to_sheet(exportRows);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Search log");
+        const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+        XLSX.writeFile(wb, "search-log-" + stamp + ".xlsx");
+        showToast("Excel downloaded", "success");
+      });
+
+      resetFileBtn.addEventListener("click", function () {
+        if (scanning) stopScanner();
+        rows = [];
+        headers = [];
+        eanKey = null;
+        articleKey = null;
+        dataReady = false;
+        fileInput.value = "";
+        fileInfo.innerHTML = "";
+        fileInfo.classList.remove("visible");
+        resetFileWrap.style.display = "none";
+        mappingSection.classList.remove("visible");
+        eanColumnSelect.innerHTML = "";
+        articleColumnSelect.innerHTML = '<option value="">— None —</option>';
+        manualEan.value = "";
+        manualArticle.value = "";
+        articleHint.textContent = "Select an article number column in step 1 to enable this search.";
+        resultCard.classList.remove("visible");
+        resultBody.innerHTML = "";
+        resultQuery.textContent = "";
+        resultQueryType.textContent = "";
+        resultStatus.textContent = "";
+        resultStatus.className = "result-status";
+        history.length = 0;
+        lastHistoryIndex = -1;
+        historyList.innerHTML = "";
+        historyCard.style.display = "none";
+        remarkInput.value = "";
+        remarkSavedMsg.style.display = "none";
+        showToast("File and data cleared", "success");
+      });
+
+      manualEan.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") { e.preventDefault(); lookupByEan(manualEan.value); }
+      });
+      manualArticle.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") { e.preventDefault(); lookupByArticle(manualArticle.value); }
+      });
+
+      // Scanner
+      startScannerBtn.addEventListener("click", startScanner);
+      stopScannerBtn.addEventListener("click", stopScanner);
+
+      function startScanner() {
+        if (!dataReady) {
+          showToast("Upload Excel and confirm columns first", "error");
+          return;
+        }
+        if (!eanKey) {
+          showToast("Select an EAN column to use the scanner", "error");
+          return;
+        }
+        if (scanning) return;
+
+        readerEl.classList.add("visible");
+        scannerControls.style.display = "flex";
+        startScannerBtn.style.display = "none";
+        scannerStatus.textContent = "Starting camera…";
+
+        html5QrCode = new Html5Qrcode("reader", {
+          formatsToSupport: [
+            Html5QrcodeSupportedFormats.EAN_13,
+            Html5QrcodeSupportedFormats.EAN_8,
+            Html5QrcodeSupportedFormats.UPC_A,
+            Html5QrcodeSupportedFormats.UPC_E,
+            Html5QrcodeSupportedFormats.CODE_128,
+          ],
+          verbose: false,
+        });
+
+        const config = {
+          fps: 10,
+          qrbox: function (viewfinderWidth, viewfinderHeight) {
+            const w = Math.min(viewfinderWidth * 0.9, 320);
+            const h = Math.min(viewfinderHeight * 0.35, 120);
+            return { width: w, height: h };
+          },
+          aspectRatio: 1.333,
+        };
+
+        html5QrCode
+          .start(
+            { facingMode: "environment" },
+            config,
+            onScanSuccess,
+            function () {}
+          )
+          .then(function () {
+            scanning = true;
+            scannerStatus.textContent = "Point the camera at an EAN barcode";
+          })
+          .catch(function (err) {
+            console.error(err);
+            scannerStatus.textContent = "Camera error: " + (err.message || err);
+            showToast("Could not access camera. Check permissions.", "error");
+            resetScannerUI();
+          });
+      }
+
+      function onScanSuccess(decodedText) {
+        const now = Date.now();
+        if (decodedText === lastScanned && now - lastScanTime < 2500) return;
+        lastScanned = decodedText;
+        lastScanTime = now;
+        if (navigator.vibrate) navigator.vibrate(80);
+        manualEan.value = decodedText;
+        lookupByEan(decodedText);
+        showToast("Scanned: " + decodedText, "success");
+      }
+
+      function stopScanner() {
+        if (!html5QrCode || !scanning) {
+          resetScannerUI();
+          return;
+        }
+        html5QrCode.stop().then(function () {
+          scanning = false;
+          resetScannerUI();
+        }).catch(function () {
+          scanning = false;
+          resetScannerUI();
+        });
+      }
+
+      function resetScannerUI() {
+        readerEl.classList.remove("visible");
+        scannerControls.style.display = "none";
+        startScannerBtn.style.display = "block";
+        scannerStatus.textContent = "";
+        try { if (html5QrCode) html5QrCode.clear(); } catch (e) {}
+        html5QrCode = null;
+      }
+
+      document.addEventListener("visibilitychange", function () {
+        if (document.hidden && scanning) stopScanner();
+      });
+    })();
+  </script>
+</body>
+</html>
